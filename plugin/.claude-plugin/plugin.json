@@ -1,0 +1,10 @@
+{
+  "name": "guided-pr",
+  "version": "0.1.0",
+  "description": "Walk through a GitHub PR or GitLab MR as if the author were presenting it, and ask questions about any lines. Needs the guided-pr binary: https://github.com/Gabb1995/guided-pr#install",
+  "author": { "name": "Gabriel Caruana", "url": "https://github.com/Gabb1995" },
+  "homepage": "https://github.com/Gabb1995/guided-pr",
+  "repository": "https://github.com/Gabb1995/guided-pr",
+  "license": "MIT",
+  "keywords": ["code-review", "pull-request", "merge-request", "gitlab", "github"]
+}

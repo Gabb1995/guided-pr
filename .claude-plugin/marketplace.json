@@ -1,0 +1,12 @@
+{
+  "name": "guided-pr",
+  "owner": { "name": "Gabriel Caruana", "url": "https://github.com/Gabb1995" },
+  "description": "Guided, presentation-style reviews of GitHub pull requests and GitLab merge requests, with live Q&A.",
+  "plugins": [
+    {
+      "name": "guided-pr",
+      "source": "./plugin",
+      "description": "Walk through a GitHub PR or GitLab MR as if the author were presenting it, and ask questions about any lines."
+    }
+  ]
+}

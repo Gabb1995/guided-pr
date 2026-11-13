@@ -1,0 +1,6 @@
+bin/
+.runtime/
+.idea/
+.opencode/
+prototypes/
+dist/

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guided review</title>
+<link rel="stylesheet" href="/assets/deck.css">
+<script src="/assets/mermaid.min.js" defer></script>
+<script src="/assets/blocks.js" defer></script>
+<script src="/assets/deck.js" defer></script>
+</head>
+<body>
+<header>
+  <div class="pr"><a id="prTitle" target="_blank" rel="noreferrer"></a><div class="pr-meta" id="prMeta"></div></div>
+  <span class="cm-count" id="cmCount" hidden></span>
+  <div class="progress" id="progress"></div>
+  <button class="finish" id="finish" title="Tell Claude you're done reviewing">Finish</button>
+</header>
+<main id="main"><div class="loading">Loading the walkthrough…</div></main>
+<footer>
+  <div class="askrow">
+    <div class="nav"><button id="prev" aria-label="Previous">←</button><button id="next" aria-label="Next">→</button></div>
+    <form class="ask" id="askForm">
+      <span class="presence" id="presence" title=""></span>
+      <span class="ctx" id="ctx"></span>
+      <input id="q" placeholder="Ask about this slide…" autocomplete="off">
+      <button>Ask</button>
+    </form>
+    <span class="hint">drag lines to select · <kbd>/</kbd> ask · <kbd>Esc</kbd> back</span>
+  </div>
+</footer>
+<div class="toast" id="toast" hidden></div>
+</body>
+</html>
