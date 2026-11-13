@@ -8,6 +8,10 @@ answers live, with new views of the code. It can also draft a review comment for
 Guided PR never calls an AI provider. An agent session (Claude Code with the `guided-pr-review`
 skill) uses its own auth to write the deck and to answer questions through the `guided-pr` CLI.
 
+![Guided PR walking through spf13/cobra#2356: intro, a diagram and code slide, selecting lines, asking a question, and the answer with a draft comment](docs/demo.gif)
+
+<sub>Demo on [spf13/cobra#2356](https://github.com/spf13/cobra/pull/2356). The narration and answer were written by the agent, not the PR's author.</sub>
+
 ## Install
 
 **Requirement:** guided-pr talks to GitLab and GitHub through their official CLIs and your existing
