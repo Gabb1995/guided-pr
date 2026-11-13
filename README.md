@@ -40,7 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/Gabb1995/guided-pr/main/install.sh 
   /plugin install guided-pr@guided-pr
   ```
 - **Claude Code or OpenCode**, without the plugin: `guided-pr install-skill`
-  (writes the skill to `~/.claude/skills` and/or `~/.config/opencode/skills`).
+  (writes the skill to `~/.claude/skills` and/or `~/.config/opencode/skills`; for OpenCode it also adds a
+  `/guided-pr-review <URL>` command).
 
 **3. Use it.** From the repository the PR changes, ask your agent:
 

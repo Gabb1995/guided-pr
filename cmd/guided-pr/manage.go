@@ -121,13 +121,14 @@ func installSkill(claude, opencode bool) {
 		if err := os.WriteFile(path, data, 0o644); err != nil {
 			die(1, err.Error())
 		}
-		fmt.Printf("installed the %s skill: %s\n", agent, path)
+		fmt.Printf("installed %s: %s\n", agent, path)
 	}
 	if claude {
-		write(filepath.Join(home, ".claude", "skills", "guided-pr-review", "SKILL.md"), guidedpr.ClaudeSkill, "Claude Code")
+		write(filepath.Join(home, ".claude", "skills", "guided-pr-review", "SKILL.md"), guidedpr.ClaudeSkill, "the Claude Code skill")
 	}
 	if opencode {
-		write(filepath.Join(home, ".config", "opencode", "skills", "guided-pr-review", "SKILL.md"), guidedpr.OpenCodeSkill, "OpenCode")
+		write(filepath.Join(home, ".config", "opencode", "skills", "guided-pr-review", "SKILL.md"), guidedpr.OpenCodeSkill, "the OpenCode skill")
+		write(filepath.Join(home, ".config", "opencode", "commands", "guided-pr-review.md"), guidedpr.OpenCodeCommand, "the OpenCode /guided-pr-review command")
 	}
 	fmt.Println()
 	doctorQuiet()

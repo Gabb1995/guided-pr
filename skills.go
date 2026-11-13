@@ -12,3 +12,8 @@ var ClaudeSkill []byte
 //
 //go:embed opencode/guided-pr-review/SKILL.md
 var OpenCodeSkill []byte
+
+// OpenCodeCommand adds /guided-pr-review to OpenCode's command menu; it hands the URL to the skill.
+//
+//go:embed opencode/commands/guided-pr-review.md
+var OpenCodeCommand []byte
