@@ -27,7 +27,7 @@ const usage = `usage:
   guided-pr start                              start the server in the background
   guided-pr doctor                             check that glab / gh are installed and logged in
   guided-pr stop | status | version            (status with no arguments: is the server running?)
-  guided-pr install-skill [--claude] [--opencode]   install the agent skill (default: agents found)
+  guided-pr install-skill --claude|--opencode   install the agent skill
   guided-pr serve  [--addr 127.0.0.1:8787] [--data-dir DIR]   run in the foreground
   guided-pr new    URL                         create a session; prints {id, reviewUrl, bundleUrl}
   guided-pr bundle SESSION                     print the analysis bundle (diff pinned to the head SHA)

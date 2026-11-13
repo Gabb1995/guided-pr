@@ -106,12 +106,13 @@ func installSkill(claude, opencode bool) {
 		die(1, err.Error())
 	}
 	if !claude && !opencode {
-		// Default: every agent that looks installed.
-		_, errC := os.Stat(filepath.Join(home, ".claude"))
-		_, errO := os.Stat(filepath.Join(home, ".config", "opencode"))
-		claude, opencode = errC == nil, errO == nil
-		if !claude && !opencode {
-			die(1, "found neither ~/.claude nor ~/.config/opencode; pass --claude or --opencode")
+		die(2, "choose which agent to install for:\n  guided-pr install-skill --opencode   OpenCode (skill + /guided-pr-review command)\n  guided-pr install-skill --claude     Claude Code (or use the plugin: /plugin marketplace add Gabb1995/guided-pr)\nInstall each agent only one way, or it will list the skill twice.")
+	}
+	if opencode {
+		// OpenCode also reads ~/.claude/skills, where the Claude variant would show up as a second copy.
+		if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "guided-pr-review")); err == nil && !claude {
+			fmt.Println("Warning: ~/.claude/skills/guided-pr-review exists; OpenCode reads that folder too and will list the skill twice.")
+			fmt.Println("If you use the Claude Code plugin, delete that folder.")
 		}
 	}
 	write := func(path string, data []byte, agent string) {

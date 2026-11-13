@@ -41,4 +41,4 @@ case ":$PATH:" in
   *) echo "Add $INSTALL_DIR to your PATH, e.g.: echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.profile" ;;
 esac
 "$INSTALL_DIR/guided-pr" doctor || true
-echo "Next: run 'guided-pr install-skill' (or install the Claude Code plugin), then ask your agent for a guided review of a PR/MR URL."
+echo "Next: OpenCode: 'guided-pr install-skill --opencode'. Claude Code: '/plugin marketplace add Gabb1995/guided-pr' then '/plugin install guided-pr@guided-pr'."

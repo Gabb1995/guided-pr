@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/Gabb1995/guided-pr/main/install.sh 
   /plugin marketplace add Gabb1995/guided-pr
   /plugin install guided-pr@guided-pr
   ```
-- **Claude Code or OpenCode**, without the plugin: `guided-pr install-skill`
+- **OpenCode**: `guided-pr install-skill --opencode`. **Claude Code** without the plugin: `guided-pr install-skill --claude`
   (writes the skill to `~/.claude/skills` and/or `~/.config/opencode/skills`; for OpenCode it also adds a
   `/guided-pr-review <URL>` command).
 
@@ -74,7 +74,7 @@ you:   Finish ──▶ guided-pr next exits 4 and the agent stops listening
 |---|---|
 | `guided-pr start` / `stop` / `status` | Run the server in the background on `127.0.0.1:8787` |
 | `guided-pr serve [--addr] [--data-dir]` | Run the server in the foreground |
-| `guided-pr install-skill [--claude] [--opencode]` | Install the agent skill matching this binary |
+| `guided-pr install-skill --claude\|--opencode` | Install the agent skill matching this binary |
 | `guided-pr doctor` | Check that `glab` / `gh` are installed and logged in |
 | `guided-pr version` | Print the version |
 | `guided-pr new URL` | Create a session from an MR/PR URL |
