@@ -70,7 +70,7 @@
       case 'answer': {
         const e = questions.get(d.questionId); if (!e) break;
         e.answer = d.answer;
-        if (!replaying && track[i] && track[i].id !== d.questionId) toast('Claude answered “' + trim(e.q.text, 48) + '”', () => go(indexOf(d.questionId)));
+        if (!replaying && track[i] && track[i].id !== d.questionId) toast('The agent answered “' + trim(e.q.text, 48) + '”', () => go(indexOf(d.questionId)));
         break;
       }
       case 'comment': posted.set([d.hunkId, d.side, d.startLine, d.endLine].join('|'), d); updateCount(); break;
@@ -157,8 +157,8 @@
       const on = origin.kind === 'slide' ? origin.slide.title : origin.kind === 'minor' ? 'Small supporting changes' : 'the intro';
       right.innerHTML = `<div class="eyebrow"><span class="detour-tag">Your question</span><span>on “${esc(on)}”</span>${sel ? `<span class="sel-tag">${esc(selLabel(sel))}</span>` : ''}</div><h1>${esc(e.q.text)}</h1>`;
       if (!e.answer) {
-        right.insertAdjacentHTML('beforeend', `<div class="thinking"><span class="dot"></span><span id="st">${esc(e.status || (listening ? 'Claude is looking into it' : 'Waiting for Claude'))}…</span></div>`);
-        if (!listening) right.insertAdjacentHTML('beforeend', '<p class="waiting-note">Claude isn’t connected right now. Your question is saved and will be answered when the review session in your terminal is listening again.</p>');
+        right.insertAdjacentHTML('beforeend', `<div class="thinking"><span class="dot"></span><span id="st">${esc(e.status || (listening ? 'The agent is looking into it' : 'Waiting for the agent'))}…</span></div>`);
+        if (!listening) right.insertAdjacentHTML('beforeend', '<p class="waiting-note">The agent isn’t connected right now. Your question is saved and will be answered when the review session in your terminal is listening again.</p>');
       } else {
         right.insertAdjacentHTML('beforeend', `<div class="say">${md(e.answer.say)}</div>`);
         (e.answer.blocks || []).filter(b => !VISUAL.has(b.type)).forEach(b => right.append(render(b, ctx)));
@@ -262,7 +262,7 @@
   // ---------- chrome ----------
   function updatePresence() {
     const p = $('presence'); p.classList.toggle('on', listening);
-    p.title = listening ? 'Claude is listening' : 'Claude isn’t connected. Questions are saved and answered once the session in your terminal listens again.';
+    p.title = listening ? 'The agent is listening' : 'The agent isn’t connected. Questions are saved and answered once the session in your terminal listens again.';
   }
   function updateCount() { const n = posted.size; $('cmCount').hidden = !n; $('cmCount').textContent = `${n} comment${n > 1 ? 's' : ''} posted`; }
   let toastTimer;
@@ -276,7 +276,7 @@
   $('askForm').onsubmit = e => { e.preventDefault(); const v = $('q').value.trim(); if (!v) return; $('q').value = ''; $('q').blur(); ask(v); };
   $('prev').onclick = () => go(i - 1); $('next').onclick = () => go(i + 1);
   $('finish').onclick = async () => {
-    if (finished || !confirm('Finish the review? Claude stops listening for questions.')) return;
+    if (finished || !confirm('Finish the review? The agent stops listening for questions.')) return;
     try { await post('/end', {}); } catch (e) { toast(e.message); }
   };
   addEventListener('keydown', e => {
