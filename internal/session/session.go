@@ -56,6 +56,7 @@ const (
 	EventAnswer   = "answer"   // the agent answered a question
 	EventComment  = "comment"  // the reviewer posted a comment to the forge
 	EventEnded    = "ended"    // the reviewer finished; the agent should stop listening
+	EventApproved = "approved" // the reviewer approved the pull request on the forge
 )
 
 type Event struct {

@@ -64,6 +64,13 @@ func (GHCLI) CreateComment(ctx context.Context, pr PullRequest, comment Comment)
 	return err
 }
 
+// Approve submits an APPROVE review on the reviewed commit.
+func (GHCLI) Approve(ctx context.Context, pr PullRequest) error {
+	endpoint := fmt.Sprintf("repos/%s/%s/pulls/%d/reviews", pr.Owner, pr.Repo, pr.Number)
+	_, err := ghRaw(ctx, "api", endpoint, "--method", "POST", "-f", "event=APPROVE", "-f", "commit_id="+pr.HeadSHA)
+	return err
+}
+
 func githubSide(l DiffLine) string {
 	if l.Side() == "old" {
 		return "LEFT"

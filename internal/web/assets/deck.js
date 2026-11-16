@@ -12,7 +12,7 @@
   let i = 0, returnTo = null;
   const questions = new Map(); // qid -> {q, status, answer}
   const posted = new Map();    // "hunk|side|start|end" -> comment
-  let lastSeq = 0, finished = false, listening = false, replaying = true;
+  let lastSeq = 0, finished = false, approved = false, listening = false, replaying = true;
 
   async function post(path, body) {
     const res = await fetch(api(path), { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Guided-PR': '1' }, body: JSON.stringify(body) });
@@ -74,10 +74,11 @@
         break;
       }
       case 'comment': posted.set([d.hunkId, d.side, d.startLine, d.endLine].join('|'), d); updateCount(); break;
-      case 'ended': finished = true; $('finish').textContent = 'Finished'; $('finish').classList.add('done'); break;
+      case 'ended': finished = true; updateFinish(); break;
+      case 'approved': approved = true; updateFinish(); break;
       case 'presence': listening = !!d.listening; updatePresence(); break;
     }
-    if (ev.type !== 'presence' && ev.type !== 'comment') refreshIfShowing(ev);
+    if (ev.type !== 'presence' && ev.type !== 'comment' && ev.type !== 'approved') refreshIfShowing(ev);
   }
   function refreshIfShowing(ev) {
     const cur = track[i]; if (!cur) return;
@@ -275,11 +276,54 @@
 
   $('askForm').onsubmit = e => { e.preventDefault(); const v = $('q').value.trim(); if (!v) return; $('q').value = ''; $('q').blur(); ask(v); };
   $('prev').onclick = () => go(i - 1); $('next').onclick = () => go(i + 1);
-  $('finish').onclick = async () => {
-    if (finished || !confirm('Finish the review? The agent stops listening for questions.')) return;
-    try { await post('/end', {}); } catch (e) { toast(e.message); }
-  };
+  // ---------- finish: approve when there's nothing to say, otherwise recap the comments ----------
+  const kind = () => V.host === 'GitLab' ? 'MR' : 'PR';
+  function updateFinish() {
+    const b = $('finish');
+    b.textContent = approved ? (finished ? 'Approved · finished' : 'Approved') : finished ? 'Finished' : 'Finish';
+    b.classList.toggle('done', finished || approved);
+    b.title = finished ? 'Show what you posted' : 'Tell the agent you\u2019re done reviewing';
+  }
+  function finishDialog() {
+    const dlg = $('finishDlg'), list = [...posted.values()];
+    const body = el('div', 'fd-body'), actions = el('div', 'fd-actions');
+    body.innerHTML = `<h2>${finished ? 'Review finished' : 'Finish the review'}</h2>`;
+    if (approved) body.insertAdjacentHTML('beforeend', `<span class="approved">\u2713 Approved on ${esc(V.host)}</span>`);
+    if (!list.length) {
+      body.insertAdjacentHTML('beforeend', approved ? `<p>You didn\u2019t post any comments.</p>`
+        : `<p>You didn\u2019t post any comments. Approve this ${kind()} on ${esc(V.host)}?</p>`);
+    } else {
+      body.insertAdjacentHTML('beforeend', `<p>You posted ${list.length} comment${list.length > 1 ? 's' : ''} on ${esc(V.host)}:</p>`);
+      const ul = el('ul', 'fd-comments');
+      list.forEach(c => {
+        const h = V.hunks[c.hunkId], path = h ? h.path : '';
+        const li = el('li', null, `<div class="where">${esc(path)}:${c.startLine}${c.endLine !== c.startLine ? '\u2013' + c.endLine : ''}${c.side === 'old' ? ' (old)' : ''}</div><div class="body">${md(c.body)}</div>`);
+        ul.append(li);
+      });
+      body.append(ul);
+    }
+    if (!finished) body.insertAdjacentHTML('beforeend', '<p>Finishing stops the agent listening for questions.</p>');
+    const btn = (label, cls, fn) => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
+    const busy = on => actions.querySelectorAll('button').forEach(b => { b.disabled = on; });
+    const end = async () => { if (!finished) await post('/end', {}); };
+    btn(finished ? 'Close' : 'Cancel', null, () => dlg.close());
+    if (!finished) btn(approved || list.length ? 'Finish' : 'Finish without approving', approved ? 'primary' : null, async () => {
+      busy(true); try { await end(); dlg.close(); } catch (e) { toast(e.message); busy(false); }
+    });
+    if (!approved) {
+      const ab = btn(finished ? `Approve ${kind()}` : `Approve & finish`, list.length ? null : 'primary', async () => {
+        busy(true); ab.textContent = 'Approving\u2026';
+        try { applyEvent(await post('/approve', {})); await end(); dlg.close(); toast(`Approved on ${V.host}`); }
+        catch (e) { toast('Could not approve: ' + e.message); dlg.close(); }
+      });
+    }
+    dlg.replaceChildren(body, actions);
+    dlg.showModal();
+    (actions.querySelector('.primary') || actions.lastChild).focus();
+  }
+  $('finish').onclick = finishDialog;
   addEventListener('keydown', e => {
+    if ($('finishDlg').open) return;
     if (e.target.matches('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
     if (e.key === 'ArrowRight' || e.key === 'j') go(i + 1);
     else if (e.key === 'ArrowLeft' || e.key === 'k') go(i - 1);

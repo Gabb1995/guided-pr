@@ -48,7 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/Gabb1995/guided-pr/main/install.sh 
 > Give me a guided review of https://github.com/OWNER/REPO/pull/123
 
 It writes the walkthrough, opens it at `http://localhost:8787/reviews/…`, and stays connected to
-answer what you ask in the page. Click **Finish** when you're done.
+answer what you ask in the page. Click **Finish** when you're done: if you posted no comments it offers to approve the MR/PR right there; if you did, it lists them and still lets you approve.
 
 ### In the page
 

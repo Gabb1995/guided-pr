@@ -23,6 +23,7 @@ type fakeForge struct {
 	mu       sync.Mutex
 	head     string
 	comments []forge.Comment
+	approved int
 }
 
 func (f *fakeForge) LoadPullRequest(_ context.Context, r forge.PullRequestURL) (forge.PullRequest, []forge.ChangedFile, error) {
@@ -40,6 +41,13 @@ func (f *fakeForge) CreateComment(_ context.Context, _ forge.PullRequest, c forg
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.comments = append(f.comments, c)
+	return nil
+}
+
+func (f *fakeForge) Approve(_ context.Context, _ forge.PullRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.approved++
 	return nil
 }
 
@@ -236,5 +244,17 @@ func TestStateChangingRequestsNeedTheAPIHeader(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 403 {
 		t.Fatalf("cross-site style request was accepted: %d", res.StatusCode)
+	}
+}
+
+func TestApproveIsRefusedWhenStale(t *testing.T) {
+	h := newHarness(t)
+	id, _ := h.session()
+	if code := h.call("POST", "/api/sessions/"+id+"/approve", map[string]string{}, nil); code != 201 || h.forge.approved != 1 {
+		t.Fatalf("approve: %d (approved %d)", code, h.forge.approved)
+	}
+	h.forge.head = "head2"
+	if code := h.call("POST", "/api/sessions/"+id+"/approve", map[string]string{}, nil); code != 409 || h.forge.approved != 1 {
+		t.Fatalf("expected stale refusal, got %d", code)
 	}
 }
