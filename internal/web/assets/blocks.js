@@ -82,21 +82,26 @@
     const wrap = el('div', 'blk blk-comment');
     wrap.innerHTML = `<div class="cm-head"><span class="cm-tag">Draft comment</span><span class="cm-where" title="${esc(where)}">${esc(where)}</span></div>
       <textarea rows="3"></textarea>
-      <div class="cm-actions"><span class="cm-note">Nothing is posted until you click Post.</span><button class="cm-discard">Discard</button><button class="cm-post">Post to ${esc(ctx.host)}</button></div>`;
+      <div class="cm-actions"><span class="cm-note">Queued comments are sent to ${esc(ctx.host)} together when you finish.</span><button class="cm-discard">Discard</button><button class="cm-post">Add to review</button></div>`;
     const ta = wrap.querySelector('textarea');
     ta.value = b.body;
     const fit = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; };
     requestAnimationFrame(fit); ta.oninput = fit;
     const actions = wrap.querySelector('.cm-actions'), note = wrap.querySelector('.cm-note');
-    const posted = ctx.postedComment && ctx.postedComment(b);
-    const markPosted = () => { ta.disabled = true; wrap.classList.add('posted'); wrap.querySelector('.cm-tag').textContent = 'Posted'; actions.innerHTML = `<span class="cm-note">Posted on ${esc(ctx.host)}.</span>`; };
-    if (posted) { ta.value = posted.body; markPosted(); return wrap; }
+    const done = ctx.commentState && ctx.commentState(b);
+    const mark = state => {
+      ta.disabled = true; wrap.classList.add('posted');
+      wrap.querySelector('.cm-tag').textContent = state === 'sent' ? 'Sent' : 'Queued';
+      actions.innerHTML = `<span class="cm-note">${state === 'sent' ? `Sent to ${esc(ctx.host)}.` : 'In your review. You can edit or drop it when you finish.'}</span>`;
+    };
+    if (done) { ta.value = done.body; mark(done.state); return wrap; }
+    if (ctx.reviewSent && ctx.reviewSent()) { ta.disabled = true; actions.innerHTML = '<span class="cm-note">The review was already sent.</span>'; return wrap; }
     wrap.querySelector('.cm-discard').onclick = () => { wrap.classList.add('discarded'); ta.disabled = true; actions.innerHTML = '<span class="cm-note">Discarded.</span>'; };
     const post = wrap.querySelector('.cm-post');
     post.onclick = async () => {
       const body = ta.value.trim(); if (!body) return;
-      post.disabled = true; note.className = 'cm-note'; note.textContent = 'Posting…';
-      try { await ctx.postComment({ hunkId: b.hunkId, side: b.side, startLine: b.startLine, endLine: b.endLine, body }); markPosted(); }
+      post.disabled = true; note.className = 'cm-note'; note.textContent = 'Adding…';
+      try { await ctx.queueComment({ hunkId: b.hunkId, side: b.side, startLine: b.startLine, endLine: b.endLine, body }); mark('queued'); }
       catch (e) { post.disabled = false; note.className = 'cm-note err'; note.textContent = e.message; }
     };
     return wrap;

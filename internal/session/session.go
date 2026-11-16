@@ -51,12 +51,16 @@ func (s Snapshot) HunkIDs() []string {
 
 // Event types in events.jsonl.
 const (
-	EventQuestion = "question" // the reviewer asked something
-	EventStatus   = "status"   // the agent reports progress on a question
-	EventAnswer   = "answer"   // the agent answered a question
-	EventComment  = "comment"  // the reviewer posted a comment to the forge
-	EventEnded    = "ended"    // the reviewer finished; the agent should stop listening
-	EventApproved = "approved" // the reviewer approved the pull request on the forge
+	EventQuestion  = "question"  // the reviewer asked something
+	EventStatus    = "status"    // the agent reports progress on a question
+	EventAnswer    = "answer"    // the agent answered a question
+	EventQueued    = "queued"    // the reviewer queued a comment for the review
+	EventSubmitted = "submitted" // the reviewer sent the review (queued comments + verdict) to the forge
+	EventEnded     = "ended"     // the reviewer finished; the agent should stop listening
+
+	// Older sessions: comments were posted one by one, and approval was separate.
+	EventComment  = "comment"
+	EventApproved = "approved"
 )
 
 type Event struct {

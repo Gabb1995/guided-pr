@@ -11,8 +11,10 @@
   const track = [];            // intro, slides, minor screens, detours
   let i = 0, returnTo = null;
   const questions = new Map(); // qid -> {q, status, answer}
-  const posted = new Map();    // "hunk|side|start|end" -> comment
-  let lastSeq = 0, finished = false, approved = false, listening = false, replaying = true;
+  const queued = new Map();    // comment id -> queued comment, in the order they were added
+  const legacy = [];           // comments posted one by one by older versions
+  let sent = null;             // the submitted review: {verdict, body, comments}
+  let lastSeq = 0, finished = false, listening = false, replaying = true;
 
   async function post(path, body) {
     const res = await fetch(api(path), { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Guided-PR': '1' }, body: JSON.stringify(body) });
@@ -22,9 +24,16 @@
 
   const ctx = {
     get hunks() { return V.hunks; }, get host() { return V.host; },
-    postComment: async c => { const ev = await post('/comments', c); applyEvent(ev); },
-    postedComment: b => posted.get([b.hunkId, b.side, b.startLine, b.endLine].join('|')),
+    queueComment: async c => { applyEvent(await post('/comments', c)); },
+    commentState: b => {
+      const k = keyOf(b), q = [...queued.values()].find(c => keyOf(c) === k), l = legacy.find(c => keyOf(c) === k);
+      if (q) { const s = sent && sent.comments.find(c => c.id === q.id); return { state: sent ? 'sent' : 'queued', body: s ? s.body : q.body }; }
+      return l ? { state: 'sent', body: l.body } : null;
+    },
+    reviewSent: () => !!sent,
   };
+
+  const keyOf = c => [c.hunkId, c.side, c.startLine, c.endLine].join('|');
 
   // ---------- track ----------
   function buildTrack() {
@@ -73,12 +82,14 @@
         if (!replaying && track[i] && track[i].id !== d.questionId) toast('The agent answered “' + trim(e.q.text, 48) + '”', () => go(indexOf(d.questionId)));
         break;
       }
-      case 'comment': posted.set([d.hunkId, d.side, d.startLine, d.endLine].join('|'), d); updateCount(); break;
+      case 'queued': queued.set(d.id, d); updateCount(); break;
+      case 'submitted': sent = { verdict: d.verdict, body: d.body || '', comments: d.comments || [] }; updateCount(); updateFinish(); break;
+      case 'comment': legacy.push(d); updateCount(); break;
+      case 'approved': sent = { verdict: 'approve', body: '', comments: legacy.slice() }; updateFinish(); break;
       case 'ended': finished = true; updateFinish(); break;
-      case 'approved': approved = true; updateFinish(); break;
       case 'presence': listening = !!d.listening; updatePresence(); break;
     }
-    if (ev.type !== 'presence' && ev.type !== 'comment' && ev.type !== 'approved') refreshIfShowing(ev);
+    if (ev.type !== 'presence' && !['comment', 'queued', 'submitted', 'approved'].includes(ev.type)) refreshIfShowing(ev);
   }
   function refreshIfShowing(ev) {
     const cur = track[i]; if (!cur) return;
@@ -265,7 +276,13 @@
     const p = $('presence'); p.classList.toggle('on', listening);
     p.title = listening ? 'The agent is listening' : 'The agent isn’t connected. Questions are saved and answered once the session in your terminal listens again.';
   }
-  function updateCount() { const n = posted.size; $('cmCount').hidden = !n; $('cmCount').textContent = `${n} comment${n > 1 ? 's' : ''} posted`; }
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  function updateCount() {
+    const n = sent ? sent.comments.length : legacy.length + queued.size;
+    $('cmCount').hidden = !n;
+    $('cmCount').textContent = sent || legacy.length ? `${plural(n, 'comment')} sent` : `${plural(n, 'comment')} queued`;
+    $('cmCount').classList.toggle('queued', !sent && !legacy.length);
+  }
   let toastTimer;
   function toast(text, action) {
     const t = $('toast'); t.innerHTML = `<span>${esc(text)}</span>`;
@@ -276,50 +293,82 @@
 
   $('askForm').onsubmit = e => { e.preventDefault(); const v = $('q').value.trim(); if (!v) return; $('q').value = ''; $('q').blur(); ask(v); };
   $('prev').onclick = () => go(i - 1); $('next').onclick = () => go(i + 1);
-  // ---------- finish: approve when there's nothing to say, otherwise recap the comments ----------
+  // ---------- finish: send the queued comments as one review, or approve when there's nothing to say ----------
   const kind = () => V.host === 'GitLab' ? 'MR' : 'PR';
+  const VERDICT = { approve: 'Approved', comment: 'Commented', request_changes: 'Changes requested' };
+  const whereOf = c => { const h = V.hunks[c.hunkId]; return `${h ? h.path : ''}:${c.startLine}${c.endLine !== c.startLine ? '–' + c.endLine : ''}${c.side === 'old' ? ' (old)' : ''}`; };
   function updateFinish() {
     const b = $('finish');
-    b.textContent = approved ? (finished ? 'Approved · finished' : 'Approved') : finished ? 'Finished' : 'Finish';
-    b.classList.toggle('done', finished || approved);
-    b.title = finished ? 'Show what you posted' : 'Tell the agent you\u2019re done reviewing';
+    b.textContent = sent ? `${VERDICT[sent.verdict]}${finished ? ' · finished' : ''}` : finished ? 'Finished' : 'Finish';
+    b.classList.toggle('done', finished || !!sent);
+    b.title = sent || finished ? 'Show your review' : 'Send your review and tell the agent you’re done';
   }
   function finishDialog() {
-    const dlg = $('finishDlg'), list = [...posted.values()];
-    const body = el('div', 'fd-body'), actions = el('div', 'fd-actions');
-    body.innerHTML = `<h2>${finished ? 'Review finished' : 'Finish the review'}</h2>`;
-    if (approved) body.insertAdjacentHTML('beforeend', `<span class="approved">\u2713 Approved on ${esc(V.host)}</span>`);
-    if (!list.length) {
-      body.insertAdjacentHTML('beforeend', approved ? `<p>You didn\u2019t post any comments.</p>`
-        : `<p>You didn\u2019t post any comments. Approve this ${kind()} on ${esc(V.host)}?</p>`);
-    } else {
-      body.insertAdjacentHTML('beforeend', `<p>You posted ${list.length} comment${list.length > 1 ? 's' : ''} on ${esc(V.host)}:</p>`);
+    const dlg = $('finishDlg'), body = el('div', 'fd-body'), actions = el('div', 'fd-actions');
+    const end = async () => { if (!finished) await post('/end', {}); };
+    const btn = (label, cls, fn) => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
+    const busy = on => dlg.querySelectorAll('button, textarea').forEach(b => { b.disabled = on; });
+    const commentList = (items, editable) => {
       const ul = el('ul', 'fd-comments');
-      list.forEach(c => {
-        const h = V.hunks[c.hunkId], path = h ? h.path : '';
-        const li = el('li', null, `<div class="where">${esc(path)}:${c.startLine}${c.endLine !== c.startLine ? '\u2013' + c.endLine : ''}${c.side === 'old' ? ' (old)' : ''}</div><div class="body">${md(c.body)}</div>`);
+      items.forEach(c => {
+        const li = el('li', null, `<div class="where"><span>${esc(whereOf(c))}</span></div>`);
+        if (editable) {
+          const ta = el('textarea'); ta.value = c.body; ta.rows = 2; ta.oninput = () => { c.body = ta.value; renderActions(); };
+          const fit = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; }; ta.addEventListener('input', fit); requestAnimationFrame(fit);
+          const drop = el('button', 'drop', 'Drop');
+          drop.onclick = () => { c.dropped = !c.dropped; li.classList.toggle('dropped', c.dropped); ta.disabled = c.dropped; drop.textContent = c.dropped ? 'Undo' : 'Drop'; renderActions(); };
+          li.querySelector('.where').append(drop); li.append(ta);
+        } else li.append(el('div', 'body', md(c.body)));
         ul.append(li);
       });
-      body.append(ul);
+      return ul;
+    };
+
+    if (sent) {
+      body.innerHTML = `<h2>${finished ? 'Review finished' : 'Review sent'}</h2><span class="approved">✓ ${esc(VERDICT[sent.verdict])} on ${esc(V.host)}</span>`;
+      if (sent.body) body.append(el('div', 'fd-summary', md(sent.body)));
+      body.insertAdjacentHTML('beforeend', `<p>${sent.comments.length ? `Sent ${plural(sent.comments.length, 'comment')}:` : 'No comments.'}</p>`);
+      if (sent.comments.length) body.append(commentList(sent.comments, false));
+      btn('Close', null, () => dlg.close());
+      if (!finished) btn('Finish', 'primary', async () => { busy(true); try { await end(); dlg.close(); } catch (e) { toast(e.message); busy(false); } });
+      dlg.replaceChildren(body, actions); dlg.showModal(); actions.lastChild.focus();
+      return;
     }
-    if (!finished) body.insertAdjacentHTML('beforeend', '<p>Finishing stops the agent listening for questions.</p>');
-    const btn = (label, cls, fn) => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
-    const busy = on => actions.querySelectorAll('button').forEach(b => { b.disabled = on; });
-    const end = async () => { if (!finished) await post('/end', {}); };
-    btn(finished ? 'Close' : 'Cancel', null, () => dlg.close());
-    if (!finished) btn(approved || list.length ? 'Finish' : 'Finish without approving', approved ? 'primary' : null, async () => {
-      busy(true); try { await end(); dlg.close(); } catch (e) { toast(e.message); busy(false); }
-    });
-    if (!approved) {
-      const ab = btn(finished ? `Approve ${kind()}` : `Approve & finish`, list.length ? null : 'primary', async () => {
-        busy(true); ab.textContent = 'Approving\u2026';
-        try { applyEvent(await post('/approve', {})); await end(); dlg.close(); toast(`Approved on ${V.host}`); }
-        catch (e) { toast('Could not approve: ' + e.message); dlg.close(); }
+
+    const draft = [...queued.values()].map(c => ({ ...c, dropped: false }));
+    body.innerHTML = `<h2>${finished ? 'Your review wasn’t sent' : 'Finish the review'}</h2>`;
+    body.insertAdjacentHTML('beforeend', draft.length
+      ? `<p>Your review has ${plural(draft.length, 'comment')}. Edit or drop any before sending them to ${esc(V.host)} together.</p>`
+      : `<p>You didn’t queue any comments. Approve this ${kind()} on ${esc(V.host)}?</p>`);
+    if (draft.length) body.append(commentList(draft, true));
+    const summary = el('textarea', 'fd-sum'); summary.rows = 2; summary.placeholder = 'Overall comment (optional)'; summary.oninput = () => renderActions();
+    body.append(summary);
+    if (!finished) body.insertAdjacentHTML('beforeend', '<p class="fd-note">Finishing stops the agent listening for questions.</p>');
+
+    const submit = async (verdict, b) => {
+      const kept = draft.filter(c => !c.dropped);
+      if (kept.some(c => !c.body.trim())) { toast('A comment is empty: write something or drop it.'); return; }
+      const label = b.textContent; busy(true); b.textContent = 'Sending…';
+      try {
+        applyEvent(await post('/review', { verdict, body: summary.value, comments: kept.map(c => ({ id: c.id, body: c.body })) }));
+        await end(); dlg.close(); toast(`Review sent to ${V.host}: ${VERDICT[verdict].toLowerCase()}`);
+      } catch (e) { toast('Could not send the review: ' + e.message); busy(false); b.textContent = label; }
+    };
+    function renderActions() {
+      actions.replaceChildren();
+      const kept = draft.filter(c => !c.dropped).length, said = kept || summary.value.trim();
+      btn(finished ? 'Close' : 'Cancel', null, () => dlg.close());
+      if (!finished) btn(draft.length ? 'Discard all' : 'Finish without approving', 'quiet', async () => {
+        if (draft.length && !confirm(`Discard ${plural(draft.length, 'queued comment')}? Nothing is sent to ${V.host}.`)) return;
+        busy(true); try { await end(); dlg.close(); } catch (e) { toast(e.message); busy(false); }
       });
+      if (said && V.host === 'GitHub') btn('Request changes', null, e => submit('request_changes', e.currentTarget));
+      btn(said ? 'Send & approve' : finished ? `Approve ${kind()}` : 'Approve & finish', said ? null : 'primary', e => submit('approve', e.currentTarget));
+      if (said) btn(kept ? `Send ${plural(kept, 'comment')}` : 'Send comment', 'primary', e => submit('comment', e.currentTarget));
     }
-    dlg.replaceChildren(body, actions);
-    dlg.showModal();
-    (actions.querySelector('.primary') || actions.lastChild).focus();
+    renderActions();
+    dlg.replaceChildren(body, actions); dlg.showModal();
+    actions.querySelector('.primary').focus();
   }
   $('finish').onclick = () => { if (V) finishDialog(); };
   addEventListener('keydown', e => {

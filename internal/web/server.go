@@ -82,7 +82,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/questions", s.ask)
 	mux.HandleFunc("POST /api/sessions/{id}/comments", s.comment)
 	mux.HandleFunc("POST /api/sessions/{id}/end", s.end)
-	mux.HandleFunc("POST /api/sessions/{id}/approve", s.approve)
+	mux.HandleFunc("POST /api/sessions/{id}/review", s.review)
 	mux.HandleFunc("GET /assets/{name}", s.asset)
 
 	var h http.Handler = requireAPIHeader(mux)
@@ -465,7 +465,15 @@ type commentRequest struct {
 	Body      string `json:"body"`
 }
 
-// comment posts a review comment to the forge. Only the browser calls this: the agent can draft, never post.
+// queuedComment is a comment waiting to be sent with the review.
+type queuedComment struct {
+	ID string `json:"id"`
+	commentRequest
+}
+
+const maxCommentBody = 65536
+
+// comment queues a review comment. Nothing reaches the forge until the reviewer submits the review.
 func (s *Server) comment(w http.ResponseWriter, r *http.Request) {
 	snap, ok := s.snapshot(w, r)
 	if !ok {
@@ -476,61 +484,146 @@ func (s *Server) comment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Body = strings.TrimSpace(req.Body)
-	if req.Body == "" || len(req.Body) > 65536 {
+	if req.Body == "" || len(req.Body) > maxCommentBody {
 		fail(w, 400, "comment body is required")
 		return
 	}
-	start, end, file, err := deck.CommentLines(snap, req.HunkID, req.Side, req.StartLine, req.EndLine)
-	if err != nil {
+	if _, _, _, err := deck.CommentLines(snap, req.HunkID, req.Side, req.StartLine, req.EndLine); err != nil {
 		fail(w, 400, err.Error())
 		return
 	}
-	pr := snap.PullRequest
-	current, _, err := s.forge.LoadPullRequest(r.Context(), pr.Reference())
-	if err != nil {
-		fail(w, 502, "could not verify the current "+pr.HostName()+" commit: "+err.Error())
+	if s.submitted(snap.SessionID) {
+		fail(w, 409, "the review was already submitted")
 		return
 	}
-	if current.HeadSHA != pr.HeadSHA {
-		fail(w, 409, "the "+pr.HostName()+" branch moved since this review was generated, so line numbers may be wrong; the comment was not posted")
+	id, err := session.NewID()
+	if err != nil {
+		fail(w, 500, "could not create comment id")
 		return
 	}
-	err = s.forge.CreateComment(r.Context(), pr, forge.Comment{Path: file.Path, OldPath: file.Previous, Body: req.Body, CommitSHA: pr.HeadSHA, Start: start, End: end})
+	ev, err := s.hub.Record(snap.SessionID, session.EventQueued, queuedComment{ID: id[:12], commentRequest: req})
 	if err != nil {
-		fail(w, 502, pr.HostName()+" rejected the comment: "+err.Error())
-		return
-	}
-	ev, err := s.hub.Record(snap.SessionID, session.EventComment, req)
-	if err != nil {
-		fail(w, 500, "posted to "+pr.HostName()+", but could not record it locally")
+		fail(w, 500, err.Error())
 		return
 	}
 	respond(w, 201, ev)
 }
 
-// approve approves the pull request on the forge. Only the browser calls this, and only for the reviewed commit.
-func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
+// submitted reports whether the review was already sent, in this or the older one-comment-at-a-time flow.
+func (s *Server) submitted(id string) bool {
+	events, _ := s.store.Events(id)
+	for _, ev := range events {
+		if ev.Type == session.EventSubmitted || ev.Type == session.EventApproved {
+			return true
+		}
+	}
+	return false
+}
+
+type reviewRequest struct {
+	Verdict  string `json:"verdict"`
+	Body     string `json:"body"`
+	Comments []struct {
+		ID   string `json:"id"`
+		Body string `json:"body"`
+	} `json:"comments"`
+}
+
+type submittedReview struct {
+	Verdict  string          `json:"verdict"`
+	Body     string          `json:"body,omitempty"`
+	Comments []queuedComment `json:"comments"`
+}
+
+// review sends the queued comments the reviewer kept (with their final wording) and the verdict to the forge.
+// Only the browser calls this, and only for the reviewed commit.
+func (s *Server) review(w http.ResponseWriter, r *http.Request) {
 	snap, ok := s.snapshot(w, r)
 	if !ok {
 		return
 	}
+	var req reviewRequest
+	if !decode(w, r, &req) {
+		return
+	}
 	pr := snap.PullRequest
+	switch req.Verdict {
+	case forge.VerdictApprove, forge.VerdictComment:
+	case forge.VerdictRequestChanges:
+		if pr.Provider != forge.ProviderGitHub {
+			fail(w, 400, pr.HostName()+" reviews can approve or comment, not request changes")
+			return
+		}
+	default:
+		fail(w, 400, "verdict must be approve, comment or request_changes")
+		return
+	}
+	req.Body = strings.TrimSpace(req.Body)
+	if len(req.Body) > maxCommentBody {
+		fail(w, 400, "review summary is too long")
+		return
+	}
+	if req.Verdict != forge.VerdictApprove && len(req.Comments) == 0 && req.Body == "" {
+		fail(w, 400, "nothing to send: add a comment or a summary, or approve")
+		return
+	}
+	events, err := s.store.Events(snap.SessionID)
+	if err != nil {
+		fail(w, 500, err.Error())
+		return
+	}
+	queued := map[string]queuedComment{}
+	for _, ev := range events {
+		switch ev.Type {
+		case session.EventSubmitted, session.EventApproved:
+			fail(w, 409, "the review was already submitted")
+			return
+		case session.EventQueued:
+			var q queuedComment
+			if json.Unmarshal(ev.Data, &q) == nil {
+				queued[q.ID] = q
+			}
+		}
+	}
+	out := submittedReview{Verdict: req.Verdict, Body: req.Body}
+	review := forge.Review{Verdict: req.Verdict, Body: req.Body}
+	seen := map[string]bool{}
+	for _, c := range req.Comments {
+		q, ok := queued[c.ID]
+		if !ok || seen[c.ID] {
+			fail(w, 400, "unknown or repeated comment "+c.ID)
+			return
+		}
+		seen[c.ID] = true
+		q.Body = strings.TrimSpace(c.Body)
+		if q.Body == "" || len(q.Body) > maxCommentBody {
+			fail(w, 400, "comment body is required")
+			return
+		}
+		start, end, file, err := deck.CommentLines(snap, q.HunkID, q.Side, q.StartLine, q.EndLine)
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		review.Comments = append(review.Comments, forge.Comment{Path: file.Path, OldPath: file.Previous, Body: q.Body, CommitSHA: pr.HeadSHA, Start: start, End: end})
+		out.Comments = append(out.Comments, q)
+	}
 	current, _, err := s.forge.LoadPullRequest(r.Context(), pr.Reference())
 	if err != nil {
 		fail(w, 502, "could not verify the current "+pr.HostName()+" commit: "+err.Error())
 		return
 	}
 	if current.HeadSHA != pr.HeadSHA {
-		fail(w, 409, "the "+pr.HostName()+" branch moved since this review was generated, so it was not approved; review the new commits first")
+		fail(w, 409, "the "+pr.HostName()+" branch moved since this review was generated, so line numbers may be wrong; nothing was sent")
 		return
 	}
-	if err := s.forge.Approve(r.Context(), pr); err != nil {
-		fail(w, 502, pr.HostName()+" rejected the approval: "+err.Error())
+	if err := s.forge.SubmitReview(r.Context(), pr, review); err != nil {
+		fail(w, 502, pr.HostName()+" rejected the review: "+err.Error())
 		return
 	}
-	ev, err := s.hub.Record(snap.SessionID, session.EventApproved, map[string]string{"headSha": pr.HeadSHA})
+	ev, err := s.hub.Record(snap.SessionID, session.EventSubmitted, out)
 	if err != nil {
-		fail(w, 500, "approved on "+pr.HostName()+", but could not record it locally")
+		fail(w, 500, "sent to "+pr.HostName()+", but could not record it locally")
 		return
 	}
 	respond(w, 201, ev)

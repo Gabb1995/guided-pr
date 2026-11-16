@@ -46,7 +46,7 @@ header { display: flex; align-items: center; gap: 16px; padding: 10px 24px; bord
 .finish.done { color: var(--add-sg); border-color: transparent; background: var(--add-bg); }
 
 /* finish dialog */
-.finish-dlg { width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 720px); border: 1px solid var(--line-2); border-radius: 14px; padding: 0;
+.finish-dlg { width: min(720px, calc(100vw - 32px)); max-height: min(80vh, 720px); border: 1px solid var(--line-2); border-radius: 14px; padding: 0;
   background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 .finish-dlg[open] { display: flex; flex-direction: column; }
 .finish-dlg::backdrop { background: rgba(10,10,8,.45); }
@@ -56,7 +56,19 @@ header { display: flex; align-items: center; gap: 16px; padding: 10px 24px; bord
 .finish-dlg .approved { display: inline-block; margin-bottom: 14px; font-size: 13px; color: var(--add-sg); background: var(--add-bg); padding: 3px 10px; border-radius: 99px; }
 .fd-comments { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
 .fd-comments li { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.fd-comments .where { font: 12px var(--mono); color: var(--text-3); padding: 6px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.fd-comments .where { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 12px var(--mono); color: var(--text-3); padding: 4px 6px 4px 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.fd-comments .where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-comments .drop { border: 0; background: none; color: var(--text-2); font: 12.5px var(--sans); padding: 2px 8px; border-radius: 6px; }
+.fd-comments .drop:hover { background: var(--surface); color: var(--del-sg); }
+.fd-comments textarea, .finish-dlg .fd-sum { display: block; width: 100%; border: 0; resize: none; padding: 8px 12px; font: 14px/1.5 var(--sans); background: var(--surface); color: var(--text); outline: none; }
+.finish-dlg .fd-sum { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; }
+.finish-dlg .fd-sum:focus, .fd-comments li:focus-within { border-color: var(--accent); }
+.fd-comments li.dropped textarea { text-decoration: line-through; color: var(--text-3); }
+.fd-comments li.dropped { opacity: .7; }
+.finish-dlg .fd-summary { border-left: 3px solid var(--line-2); padding-left: 12px; margin-bottom: 12px; }
+.finish-dlg .fd-note { font-size: 13px; color: var(--text-3); }
+.fd-actions button.quiet { border-color: transparent; margin-right: auto; }
+.cm-count.queued { color: var(--accent-text); background: var(--accent-soft); }
 .fd-comments .body { padding: 8px 12px; font-size: 14px; }
 .fd-comments .body p { margin: 0 0 6px; color: var(--text); } .fd-comments .body p:last-child { margin: 0; }
 .fd-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; padding: 14px 24px 18px; border-top: 1px solid var(--line); }

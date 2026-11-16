@@ -3,7 +3,7 @@
 A local app that presents a GitLab merge request or GitHub pull request like the author walking you
 through it: a short intro, then one focused slide at a time with the code on the left and the
 explanation on the right. Select lines and ask about them; the AI agent that wrote the walkthrough
-answers live, with new views of the code. It can also draft a review comment for you to post.
+answers live, with new views of the code. It can also draft review comments for you to add to your review.
 
 Guided PR never calls an AI provider. An agent session (Claude Code with the `guided-pr-review`
 skill) uses its own auth to write the deck and to answer questions through the `guided-pr` CLI.
@@ -48,14 +48,14 @@ curl -fsSL https://raw.githubusercontent.com/Gabb1995/guided-pr/main/install.sh 
 > Give me a guided review of https://github.com/OWNER/REPO/pull/123
 
 It writes the walkthrough, opens it at `http://localhost:8787/reviews/…`, and stays connected to
-answer what you ask in the page. Click **Finish** when you're done: if you posted no comments it offers to approve the MR/PR right there; if you did, it lists them and still lets you approve.
+answer what you ask in the page. Click **Finish** when you're done: it lists the comments you queued so you can edit or drop them, then sends them as one review (comment, approve, or request changes on GitHub). With nothing queued it offers to approve the MR/PR right there.
 
 ### In the page
 
 - `←` `→` to move between slides; `/` to ask about the current slide.
 - Drag over lines (or click, then shift-click) to select them, then **Ask** or **Comment**.
 - Answers open as detour slides; **Where you asked** keeps your code one click away. `Esc` goes back.
-- Draft comments are editable and only posted to GitLab/GitHub when you click **Post**.
+- Draft comments are editable. **Add to review** queues them; nothing reaches GitLab/GitHub until you send the review at **Finish**.
 
 ## How it works
 
@@ -64,7 +64,7 @@ agent: guided-pr new URL ──▶ snapshot pinned to the head SHA (hunks with s
 agent: guided-pr deck ID deck.json ──▶ validated; code blocks fetched from the forge at that SHA
 you:   open /reviews/ID, read, select lines, ask ──▶ question stored and queued
 agent: guided-pr next ID (blocks until you ask) ──▶ investigates ──▶ guided-pr answer ID QID answer.json
-you:   the answer appears as a detour slide; a draft comment can be edited and posted
+you:   the answer appears as a detour slide; a draft comment can be edited and queued
 you:   Finish ──▶ guided-pr next exits 4 and the agent stops listening
 ```
 
@@ -90,13 +90,13 @@ you:   Finish ──▶ guided-pr next exits 4 and the agent stops listening
 (title, story, ticket) and `chapters` of `slides` (`title`, `say`, `blocks`), plus a `minor` list
 of trivial hunks per chapter. Slides and answers share one block vocabulary: `hunk`, `code`
 (path + ref + line range, filled in by the server, never pasted), `diagram` (Mermaid), `compare`,
-and `comment` (answers only: a draft the reviewer posts). Import fails unless every hunk is shown.
+and `comment` (answers only: a draft the reviewer can add to their review). Import fails unless every hunk is shown.
 
 ### Packages
 
 | Package | Job |
 |---|---|
-| `internal/forge` | `glab`/`gh`: load the MR/PR, read a file at a SHA, post single-line or range comments |
+| `internal/forge` | `glab`/`gh`: load the MR/PR, read a file at a SHA, submit a review (line/range comments, summary, verdict) |
 | `internal/deck` | Deck and answer types, validation, resolving code blocks |
 | `internal/session` | Per-session folder: `snapshot.json`, `deck.json`, append-only `events.jsonl` |
 | `internal/qa` | Question queue, claims, agent presence, live fan-out |
@@ -105,7 +105,7 @@ and `comment` (answers only: a draft the reviewer posts). Import fails unless ev
 ## Data
 
 `~/.local/share/guided-pr/sessions/<id>/` holds `snapshot.json` (never changes), `deck.json`, and
-`events.jsonl` (questions, progress, answers, posted comments, finish). Reloading the page replays
+`events.jsonl` (questions, progress, answers, queued comments, the sent review, finish). Reloading the page replays
 the log, so detours survive. Directories are `0700`, files `0600`. 
 
 ## Security
@@ -114,8 +114,8 @@ the log, so detours survive. Directories are `0700`, files `0600`.
 - Every write request must send `X-Guided-PR: 1` and a JSON body, which browsers can't do
   cross-origin without a preflight this server never approves.
 - Same-origin scripts only (Mermaid is vendored); `nosniff`, no referrer, no framing.
-- The agent can only draft comments. Posting happens from the page, after the server checks the
-  branch hasn't moved since the snapshot.
+- The agent can only draft comments. Sending the review happens from the page, after the server checks
+  the branch hasn't moved since the snapshot.
 - No credentials stored: forge calls go through `glab`/`gh`.
 
 ## Development

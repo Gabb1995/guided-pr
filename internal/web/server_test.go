@@ -20,10 +20,9 @@ import (
 const patch = "@@ -10,3 +10,4 @@ class Guard\n context\n-    old();\n+    new();\n+    again();\n tail"
 
 type fakeForge struct {
-	mu       sync.Mutex
-	head     string
-	comments []forge.Comment
-	approved int
+	mu      sync.Mutex
+	head    string
+	reviews []forge.Review
 }
 
 func (f *fakeForge) LoadPullRequest(_ context.Context, r forge.PullRequestURL) (forge.PullRequest, []forge.ChangedFile, error) {
@@ -37,17 +36,10 @@ func (f *fakeForge) ReadFile(_ context.Context, _ forge.PullRequest, sha, path s
 	return []byte("<?php\nfunction caller() {\n    guard();\n}\n"), nil
 }
 
-func (f *fakeForge) CreateComment(_ context.Context, _ forge.PullRequest, c forge.Comment) error {
+func (f *fakeForge) SubmitReview(_ context.Context, _ forge.PullRequest, r forge.Review) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.comments = append(f.comments, c)
-	return nil
-}
-
-func (f *fakeForge) Approve(_ context.Context, _ forge.PullRequest) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.approved++
+	f.reviews = append(f.reviews, r)
 	return nil
 }
 
@@ -216,21 +208,46 @@ func TestQuestionAnswerLoop(t *testing.T) {
 	}
 }
 
-func TestCommentsArePostedAsRangesAndRefusedWhenStale(t *testing.T) {
+func TestCommentsAreQueuedAndSentAsOneReview(t *testing.T) {
 	h := newHarness(t)
 	id, snap := h.session()
 	hunk := snap.Files[0].Hunks[0].ID
-	body := map[string]any{"hunkId": hunk, "side": "new", "startLine": 11, "endLine": 12, "body": "Why twice?"}
-	if code := h.call("POST", "/api/sessions/"+id+"/comments", body, nil); code != 201 {
-		t.Fatalf("comment: %d", code)
+	var kept, dropped struct{ Data struct{ ID string } }
+	if code := h.call("POST", "/api/sessions/"+id+"/comments", map[string]any{"hunkId": hunk, "side": "new", "startLine": 11, "endLine": 12, "body": "Why twice?"}, &kept); code != 201 {
+		t.Fatalf("queue: %d", code)
 	}
-	c := h.forge.comments[0]
-	if c.Start.Kind != "add" || c.Start.NewPos != 11 || c.End.NewPos != 12 || c.End.OldPos != 12 || c.CommitSHA != "head1" {
-		t.Fatalf("unexpected comment range: %+v", c)
+	h.call("POST", "/api/sessions/"+id+"/comments", map[string]any{"hunkId": hunk, "side": "old", "startLine": 11, "endLine": 11, "body": "Drop me"}, &dropped)
+	if len(h.forge.reviews) != 0 {
+		t.Fatal("queuing a comment must not reach the forge")
 	}
+	if code := h.call("POST", "/api/sessions/"+id+"/comments", map[string]any{"hunkId": hunk, "side": "new", "startLine": 99, "endLine": 99, "body": "x"}, nil); code != 400 {
+		t.Fatalf("out-of-hunk comment should be refused, got %d", code)
+	}
+
+	// Request changes is GitHub only; this session is GitLab.
+	if code := h.call("POST", "/api/sessions/"+id+"/review", map[string]any{"verdict": "request_changes", "comments": []any{}}, nil); code != 400 {
+		t.Fatalf("expected request_changes refusal on GitLab, got %d", code)
+	}
+
 	h.forge.head = "head2"
-	if code := h.call("POST", "/api/sessions/"+id+"/comments", body, nil); code != 409 {
+	submit := map[string]any{"verdict": "approve", "body": "Looks good", "comments": []map[string]string{{"id": kept.Data.ID, "body": "Why call it twice?"}}}
+	if code := h.call("POST", "/api/sessions/"+id+"/review", submit, nil); code != 409 || len(h.forge.reviews) != 0 {
 		t.Fatalf("expected stale refusal, got %d", code)
+	}
+	h.forge.head = "head1"
+	if code := h.call("POST", "/api/sessions/"+id+"/review", submit, nil); code != 201 {
+		t.Fatalf("submit: %d", code)
+	}
+	r := h.forge.reviews[0]
+	if r.Verdict != "approve" || r.Body != "Looks good" || len(r.Comments) != 1 {
+		t.Fatalf("unexpected review: %+v", r)
+	}
+	c := r.Comments[0]
+	if c.Body != "Why call it twice?" || c.Start.Kind != "add" || c.Start.NewPos != 11 || c.End.NewPos != 12 || c.CommitSHA != "head1" {
+		t.Fatalf("unexpected comment: %+v", c)
+	}
+	if code := h.call("POST", "/api/sessions/"+id+"/review", submit, nil); code != 409 {
+		t.Fatalf("submitting twice should fail, got %d", code)
 	}
 }
 
@@ -244,17 +261,5 @@ func TestStateChangingRequestsNeedTheAPIHeader(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 403 {
 		t.Fatalf("cross-site style request was accepted: %d", res.StatusCode)
-	}
-}
-
-func TestApproveIsRefusedWhenStale(t *testing.T) {
-	h := newHarness(t)
-	id, _ := h.session()
-	if code := h.call("POST", "/api/sessions/"+id+"/approve", map[string]string{}, nil); code != 201 || h.forge.approved != 1 {
-		t.Fatalf("approve: %d (approved %d)", code, h.forge.approved)
-	}
-	h.forge.head = "head2"
-	if code := h.call("POST", "/api/sessions/"+id+"/approve", map[string]string{}, nil); code != 409 || h.forge.approved != 1 {
-		t.Fatalf("expected stale refusal, got %d", code)
 	}
 }

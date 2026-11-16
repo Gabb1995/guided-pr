@@ -133,4 +133,4 @@ talks about. Be honest: if the code doesn't show why, say so instead of inventin
 `{"type":"comment","hunkId":"…","side":"new","startLine":N,"endLine":M,"body":"…"}`, using the
 question's selection for the lines (the lines must be on one side of that hunk). Write it as a
 reviewer to the author: concrete, polite, usually a question. You only draft: the reviewer edits it
-and clicks Post. Nothing you send can post to GitLab/GitHub.
+and adds it to their review, which they send when they finish. Nothing you send can post to GitLab/GitHub.

@@ -1,12 +1,12 @@
 package forge
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os/exec"
-	"strconv"
 	"strings"
 )
 
@@ -53,22 +53,35 @@ func (GHCLI) ReadFile(ctx context.Context, pr PullRequest, sha, path string) ([]
 	return ghRaw(ctx, "api", endpoint, "-H", "Accept: application/vnd.github.raw")
 }
 
-func (GHCLI) CreateComment(ctx context.Context, pr PullRequest, comment Comment) error {
-	endpoint := fmt.Sprintf("repos/%s/%s/pulls/%d/comments", pr.Owner, pr.Repo, pr.Number)
-	args := []string{"api", endpoint, "--method", "POST", "-f", "body=" + comment.Body, "-f", "commit_id=" + comment.CommitSHA, "-f", "path=" + comment.Path,
-		"-F", "line=" + strconv.Itoa(comment.End.Number()), "-f", "side=" + githubSide(comment.End)}
-	if comment.Start != comment.End {
-		args = append(args, "-F", "start_line="+strconv.Itoa(comment.Start.Number()), "-f", "start_side="+githubSide(comment.Start))
+// SubmitReview creates one review holding every comment and the verdict, so it lands all at once or not at all.
+func (GHCLI) SubmitReview(ctx context.Context, pr PullRequest, review Review) error {
+	event := map[string]string{VerdictApprove: "APPROVE", VerdictComment: "COMMENT", VerdictRequestChanges: "REQUEST_CHANGES"}[review.Verdict]
+	if event == "" {
+		return fmt.Errorf("unknown verdict %q", review.Verdict)
 	}
-	_, err := ghRaw(ctx, args...)
-	return err
-}
-
-// Approve submits an APPROVE review on the reviewed commit.
-func (GHCLI) Approve(ctx context.Context, pr PullRequest) error {
+	comments := make([]map[string]any, 0, len(review.Comments))
+	for _, c := range review.Comments {
+		item := map[string]any{"path": c.Path, "body": c.Body, "line": c.End.Number(), "side": githubSide(c.End)}
+		if c.Start != c.End {
+			item["start_line"], item["start_side"] = c.Start.Number(), githubSide(c.Start)
+		}
+		comments = append(comments, item)
+	}
+	body := map[string]any{"commit_id": pr.HeadSHA, "event": event, "comments": comments}
+	if review.Body != "" {
+		body["body"] = review.Body
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encode GitHub request: %w", err)
+	}
 	endpoint := fmt.Sprintf("repos/%s/%s/pulls/%d/reviews", pr.Owner, pr.Repo, pr.Number)
-	_, err := ghRaw(ctx, "api", endpoint, "--method", "POST", "-f", "event=APPROVE", "-f", "commit_id="+pr.HeadSHA)
-	return err
+	command := exec.CommandContext(ctx, "gh", "api", endpoint, "--method", "POST", "--input", "-")
+	command.Stdin = bytes.NewReader(payload)
+	if output, err := command.CombinedOutput(); err != nil {
+		return explain(GH, fmt.Errorf("GitHub CLI request failed: %w: %s", err, string(output)))
+	}
+	return nil
 }
 
 func githubSide(l DiffLine) string {
