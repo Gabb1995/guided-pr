@@ -46,7 +46,7 @@ header { display: flex; align-items: center; gap: 16px; padding: 10px 24px; bord
 .finish.done { color: var(--add-sg); border-color: transparent; background: var(--add-bg); }
 
 /* finish dialog */
-.finish-dlg { width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 720px); border: 1px solid var(--line-2); border-radius: 14px; padding: 0;
+.finish-dlg { width: min(720px, calc(100vw - 32px)); max-height: min(80vh, 720px); border: 1px solid var(--line-2); border-radius: 14px; padding: 0;
   background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
 .finish-dlg[open] { display: flex; flex-direction: column; }
 .finish-dlg::backdrop { background: rgba(10,10,8,.45); }

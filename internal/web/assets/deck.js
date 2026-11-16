@@ -358,13 +358,13 @@
       actions.replaceChildren();
       const kept = draft.filter(c => !c.dropped).length, said = kept || summary.value.trim();
       btn(finished ? 'Close' : 'Cancel', null, () => dlg.close());
-      if (!finished) btn(draft.length ? 'Discard all & finish' : 'Finish without approving', 'quiet', async () => {
+      if (!finished) btn(draft.length ? 'Discard all' : 'Finish without approving', 'quiet', async () => {
         if (draft.length && !confirm(`Discard ${plural(draft.length, 'queued comment')}? Nothing is sent to ${V.host}.`)) return;
         busy(true); try { await end(); dlg.close(); } catch (e) { toast(e.message); busy(false); }
       });
       if (said && V.host === 'GitHub') btn('Request changes', null, e => submit('request_changes', e.currentTarget));
-      if (said) btn(kept ? `Send ${plural(kept, 'comment')}` : 'Send comment', 'primary', e => submit('comment', e.currentTarget));
       btn(said ? 'Send & approve' : finished ? `Approve ${kind()}` : 'Approve & finish', said ? null : 'primary', e => submit('approve', e.currentTarget));
+      if (said) btn(kept ? `Send ${plural(kept, 'comment')}` : 'Send comment', 'primary', e => submit('comment', e.currentTarget));
     }
     renderActions();
     dlg.replaceChildren(body, actions); dlg.showModal();
