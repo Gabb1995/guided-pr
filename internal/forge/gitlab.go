@@ -96,9 +96,51 @@ func (GlabCLI) ReadFile(ctx context.Context, pr PullRequest, sha, path string) (
 	return output, nil
 }
 
-// CreateComment starts a diff discussion; a range uses GitLab's line_range with line codes.
-func (GlabCLI) CreateComment(ctx context.Context, pr PullRequest, comment Comment) error {
-	endpoint := fmt.Sprintf("%s/merge_requests/%d/discussions", gitlabProject(pr.Owner, pr.Repo), pr.Number)
+// SubmitReview adds every comment as a draft note, publishes them together, then approves if asked.
+// If a draft fails, the drafts already created are deleted so nothing is half-sent.
+func (GlabCLI) SubmitReview(ctx context.Context, pr PullRequest, review Review) error {
+	if review.Verdict != VerdictApprove && review.Verdict != VerdictComment {
+		return fmt.Errorf("GitLab reviews can approve or comment, not %q", review.Verdict)
+	}
+	mr := fmt.Sprintf("%s/merge_requests/%d", gitlabProject(pr.Owner, pr.Repo), pr.Number)
+	var drafts []int
+	cleanup := func() {
+		for _, id := range drafts {
+			_ = glabWriteJSON(context.WithoutCancel(ctx), "DELETE", fmt.Sprintf("%s/draft_notes/%d", mr, id), map[string]any{}, nil)
+		}
+	}
+	notes := make([]map[string]any, 0, len(review.Comments)+1)
+	for _, c := range review.Comments {
+		notes = append(notes, map[string]any{"note": c.Body, "position": gitlabPosition(pr, c)})
+	}
+	if review.Body != "" {
+		notes = append(notes, map[string]any{"note": review.Body})
+	}
+	for _, note := range notes {
+		var created struct {
+			ID int `json:"id"`
+		}
+		if err := glabWriteJSON(ctx, "POST", mr+"/draft_notes", note, &created); err != nil {
+			cleanup()
+			return err
+		}
+		drafts = append(drafts, created.ID)
+	}
+	if len(drafts) > 0 {
+		if err := glabWriteJSON(ctx, "POST", mr+"/draft_notes/bulk_publish", map[string]any{}, nil); err != nil {
+			cleanup()
+			return err
+		}
+	}
+	if review.Verdict == VerdictApprove {
+		// sha makes GitLab refuse if the branch moved.
+		return glabWriteJSON(ctx, "POST", mr+"/approve", map[string]any{"sha": pr.HeadSHA}, nil)
+	}
+	return nil
+}
+
+// gitlabPosition anchors a diff note; a range uses GitLab's line_range with line codes.
+func gitlabPosition(pr PullRequest, comment Comment) map[string]any {
 	startSHA := pr.StartSHA
 	if startSHA == "" {
 		startSHA = pr.BaseSHA
@@ -118,13 +160,7 @@ func (GlabCLI) CreateComment(ctx context.Context, pr PullRequest, comment Commen
 	if comment.Start != comment.End {
 		position["line_range"] = map[string]any{"start": gitlabRangePoint(comment.Path, comment.Start), "end": gitlabRangePoint(comment.Path, comment.End)}
 	}
-	return glabWriteJSON(ctx, "POST", endpoint, map[string]any{"body": comment.Body, "position": position})
-}
-
-// Approve approves the merge request; sha makes GitLab refuse if the branch moved.
-func (GlabCLI) Approve(ctx context.Context, pr PullRequest) error {
-	endpoint := fmt.Sprintf("%s/merge_requests/%d/approve", gitlabProject(pr.Owner, pr.Repo), pr.Number)
-	return glabWriteJSON(ctx, "POST", endpoint, map[string]any{"sha": pr.HeadSHA})
+	return position
 }
 
 func gitlabLineNumbers(l DiffLine) map[string]any {
@@ -164,17 +200,25 @@ func glabJSON(ctx context.Context, endpoint string, target any) error {
 	return nil
 }
 
-// glabWriteJSON sends body as a JSON request body on stdin, which supports nested objects.
-func glabWriteJSON(ctx context.Context, method, endpoint string, body any) error {
+// glabWriteJSON sends body as a JSON request body on stdin, which supports nested objects, and decodes the
+// response into target when it is not nil.
+func glabWriteJSON(ctx context.Context, method, endpoint string, body, target any) error {
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("encode GitLab request: %w", err)
 	}
 	command := exec.CommandContext(ctx, "glab", "api", endpoint, "-X", method, "-H", "Content-Type: application/json", "--input", "-")
 	command.Stdin = bytes.NewReader(payload)
-	output, err := command.CombinedOutput()
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		return explain(Glab, fmt.Errorf("GitLab CLI request failed: %w: %s", err, string(output)))
+		return explain(Glab, fmt.Errorf("GitLab CLI request failed: %w: %s %s", err, stderr.String(), string(output)))
+	}
+	if target != nil {
+		if err := json.Unmarshal(output, target); err != nil {
+			return fmt.Errorf("decode GitLab CLI response: %w", err)
+		}
 	}
 	return nil
 }

@@ -53,9 +53,22 @@ type Comment struct {
 type Forge interface {
 	LoadPullRequest(context.Context, PullRequestURL) (PullRequest, []ChangedFile, error)
 	ReadFile(ctx context.Context, pr PullRequest, sha, path string) ([]byte, error)
-	CreateComment(context.Context, PullRequest, Comment) error
-	// Approve approves the pull request as the logged-in user, pinned to the reviewed head SHA.
-	Approve(context.Context, PullRequest) error
+	// SubmitReview sends the review in one go: every comment, the summary and the verdict.
+	SubmitReview(context.Context, PullRequest, Review) error
+}
+
+// Verdicts a review can be submitted with. RequestChanges is GitHub only.
+const (
+	VerdictApprove        = "approve"
+	VerdictComment        = "comment"
+	VerdictRequestChanges = "request_changes"
+)
+
+// Review is a batch of comments plus an optional summary, submitted with one verdict on the reviewed commit.
+type Review struct {
+	Verdict  string
+	Body     string
+	Comments []Comment
 }
 
 // HostName is the human-readable forge name.
@@ -102,20 +115,12 @@ func (f Forges) ReadFile(ctx context.Context, pr PullRequest, sha, path string) 
 	return c.ReadFile(ctx, pr, sha, path)
 }
 
-func (f Forges) CreateComment(ctx context.Context, pr PullRequest, comment Comment) error {
+func (f Forges) SubmitReview(ctx context.Context, pr PullRequest, review Review) error {
 	c, err := f.pick(pr.Provider)
 	if err != nil {
 		return err
 	}
-	return c.CreateComment(ctx, pr, comment)
-}
-
-func (f Forges) Approve(ctx context.Context, pr PullRequest) error {
-	c, err := f.pick(pr.Provider)
-	if err != nil {
-		return err
-	}
-	return c.Approve(ctx, pr)
+	return c.SubmitReview(ctx, pr, review)
 }
 
 type errUnsupported string
