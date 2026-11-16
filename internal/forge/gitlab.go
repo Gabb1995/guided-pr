@@ -121,6 +121,12 @@ func (GlabCLI) CreateComment(ctx context.Context, pr PullRequest, comment Commen
 	return glabWriteJSON(ctx, "POST", endpoint, map[string]any{"body": comment.Body, "position": position})
 }
 
+// Approve approves the merge request; sha makes GitLab refuse if the branch moved.
+func (GlabCLI) Approve(ctx context.Context, pr PullRequest) error {
+	endpoint := fmt.Sprintf("%s/merge_requests/%d/approve", gitlabProject(pr.Owner, pr.Repo), pr.Number)
+	return glabWriteJSON(ctx, "POST", endpoint, map[string]any{"sha": pr.HeadSHA})
+}
+
 func gitlabLineNumbers(l DiffLine) map[string]any {
 	switch l.Kind {
 	case "add":

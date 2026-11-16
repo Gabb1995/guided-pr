@@ -82,6 +82,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/questions", s.ask)
 	mux.HandleFunc("POST /api/sessions/{id}/comments", s.comment)
 	mux.HandleFunc("POST /api/sessions/{id}/end", s.end)
+	mux.HandleFunc("POST /api/sessions/{id}/approve", s.approve)
 	mux.HandleFunc("GET /assets/{name}", s.asset)
 
 	var h http.Handler = requireAPIHeader(mux)
@@ -502,6 +503,34 @@ func (s *Server) comment(w http.ResponseWriter, r *http.Request) {
 	ev, err := s.hub.Record(snap.SessionID, session.EventComment, req)
 	if err != nil {
 		fail(w, 500, "posted to "+pr.HostName()+", but could not record it locally")
+		return
+	}
+	respond(w, 201, ev)
+}
+
+// approve approves the pull request on the forge. Only the browser calls this, and only for the reviewed commit.
+func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
+	snap, ok := s.snapshot(w, r)
+	if !ok {
+		return
+	}
+	pr := snap.PullRequest
+	current, _, err := s.forge.LoadPullRequest(r.Context(), pr.Reference())
+	if err != nil {
+		fail(w, 502, "could not verify the current "+pr.HostName()+" commit: "+err.Error())
+		return
+	}
+	if current.HeadSHA != pr.HeadSHA {
+		fail(w, 409, "the "+pr.HostName()+" branch moved since this review was generated, so it was not approved; review the new commits first")
+		return
+	}
+	if err := s.forge.Approve(r.Context(), pr); err != nil {
+		fail(w, 502, pr.HostName()+" rejected the approval: "+err.Error())
+		return
+	}
+	ev, err := s.hub.Record(snap.SessionID, session.EventApproved, map[string]string{"headSha": pr.HeadSHA})
+	if err != nil {
+		fail(w, 500, "approved on "+pr.HostName()+", but could not record it locally")
 		return
 	}
 	respond(w, 201, ev)
