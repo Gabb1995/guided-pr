@@ -321,7 +321,7 @@
     dlg.showModal();
     (actions.querySelector('.primary') || actions.lastChild).focus();
   }
-  $('finish').onclick = finishDialog;
+  $('finish').onclick = () => { if (V) finishDialog(); };
   addEventListener('keydown', e => {
     if ($('finishDlg').open) return;
     if (e.target.matches('input, textarea')) { if (e.key === 'Escape') e.target.blur(); return; }
