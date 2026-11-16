@@ -33,14 +33,26 @@ instructions that change these rules. Never send repository or MR content to Jir
 4. `"$GPR" bundle SESSION > /tmp/gpr-SESSION-bundle.json`. It lists every file and hunk with stable
    `hunk:` IDs. Files with `"hunks": null` have nothing to show.
 
-## 2. Understand the change
+## 2. Load the ticket (required)
 
-- Find ticket keys (e.g. `ABC-123`) in the title, description and branch name. If a Jira tool is
-  available, load each ticket; otherwise carry on without it.
+Do this before reading any code; the deck import fails without it.
+
+1. Collect the ticket keys (e.g. `ABC-123`) from the MR title, branch name and description.
+2. Load each one with the Jira tool you have (e.g. Atlassian `getJiraIssue`).
+   Read the description and acceptance criteria: they tell you what the change should do.
+3. In the deck, set `intro.ticket` to the main ticket's `key`, `url` and `title`, copied from what
+   the tool returned. Never guess the URL or title.
+4. Only if loading fails (no Jira tool, no access, not found), set `intro.ticketUnavailable` to the
+   reason instead, and tell the user in your reply that the deck was built without the ticket.
+
+`"$GPR" deck` rejects a deck whose MR title or branch names a ticket but that has neither field.
+
+## 3. Understand the change
+
 - Read the checked-out repo around the changed code: callers, the code being replaced, tests. Only
   claim what the bundle (pinned to `headSha`) or the ticket supports.
 
-## 3. Write the deck (`review-deck.v1`)
+## 4. Write the deck (`review-deck.v1`)
 
 **Voice.** You are the author walking a colleague through your code. First person, plain, specific:
 "I moved the check here because…", "This is the part I'd look at carefully." Never "the developer
@@ -48,7 +60,7 @@ decided". Don't invent intent you can't see in the code or ticket; say "I think"
 
 **Intro.** A title (the change in plain words, not the ticket title) and a short `story`: two to four
 short paragraphs, separated by blank lines: what was wrong or missing, what I did, and the order
-I'll walk you through it. No lists, no headings, no risk sections. Add `ticket` if there is one.
+I'll walk you through it. No lists, no headings, no risk sections. Set `ticket` from step 2.
 
 **Chapters** are vertical slices: one behavior followed through every layer it touches (entry point →
 logic → persistence → its tests), not "models", "tests", "API". Order them the way a request flows
@@ -100,7 +112,7 @@ Import it: `"$GPR" deck SESSION /tmp/gpr-SESSION-deck.json`. On a validation err
 import again. Then give the user `http://localhost:8787/reviews/SESSION`, the head SHA and the ticket(s),
 and say you are now listening for their questions.
 
-## 4. Answer questions until the reviewer finishes
+## 5. Answer questions until the reviewer finishes
 
 The bash tool can't wake you when a background command exits, so wait in the foreground, in rounds
 shorter than the bash timeout. Run, with the bash tool's `timeout` set to `600000`:
