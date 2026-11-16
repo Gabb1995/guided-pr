@@ -31,6 +31,9 @@ type Intro struct {
 	Title  string  `json:"title"`
 	Story  string  `json:"story"`
 	Ticket *Ticket `json:"ticket,omitempty"`
+	// TicketUnavailable says why the ticket the MR names could not be loaded (no Jira access, not found, …).
+	// Set it instead of Ticket only when loading failed; it is never a way to skip loading.
+	TicketUnavailable string `json:"ticketUnavailable,omitempty"`
 }
 
 type Ticket struct {
@@ -92,6 +95,22 @@ type Row struct {
 	HTML string `json:"html,omitempty"`
 }
 
+// ticketKeyPattern finds Jira-style keys such as PAY-1070.
+var ticketKeyPattern = regexp.MustCompile(`\b[A-Z][A-Z0-9]+-[1-9][0-9]*\b`)
+
+// TicketKeys returns the ticket keys named in the MR's title and source branch, in order, without duplicates.
+func TicketKeys(pr forge.PullRequest) []string {
+	var keys []string
+	seen := map[string]bool{}
+	for _, k := range ticketKeyPattern.FindAllString(pr.Title+" "+pr.SourceBranch, -1) {
+		if !seen[k] {
+			seen[k] = true
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}
+
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 const maxCodeLines = 200
@@ -109,6 +128,7 @@ func Validate(d Deck, snap session.Snapshot) error {
 	if strings.TrimSpace(d.Intro.Title) == "" || strings.TrimSpace(d.Intro.Story) == "" {
 		add("intro.title and intro.story are required")
 	}
+	validateTicket(d.Intro, TicketKeys(snap.PullRequest), add)
 	if len(d.Chapters) == 0 {
 		add("at least one chapter is required")
 	}
@@ -168,6 +188,25 @@ func Validate(d Deck, snap session.Snapshot) error {
 		return fmt.Errorf("invalid deck:\n- %s", strings.Join(errs, "\n- "))
 	}
 	return nil
+}
+
+// validateTicket makes the ticket mandatory when the MR names one: the agent must load it and put its key,
+// URL and title in intro.ticket, or explain in intro.ticketUnavailable why it could not be loaded.
+func validateTicket(in Intro, keys []string, add func(string, ...any)) {
+	if t := in.Ticket; t != nil {
+		if strings.TrimSpace(t.Key) == "" || strings.TrimSpace(t.URL) == "" || strings.TrimSpace(t.Title) == "" {
+			add("intro.ticket needs key, url and title, copied from the loaded ticket (don't guess them)")
+		}
+		if in.TicketUnavailable != "" {
+			add("set intro.ticket or intro.ticketUnavailable, not both")
+		}
+		return
+	}
+	if len(keys) == 0 || strings.TrimSpace(in.TicketUnavailable) != "" {
+		return
+	}
+	add("the MR names ticket %s: load it (e.g. Jira getJiraIssue) and set intro.ticket {key, url, title} from it; "+
+		"only if loading fails, set intro.ticketUnavailable to the reason instead", strings.Join(keys, ", "))
 }
 
 // ValidateAnswer checks an answer's blocks against the snapshot.

@@ -90,7 +90,9 @@ you:   Finish ──▶ guided-pr next exits 4 and the agent stops listening
 (title, story, ticket) and `chapters` of `slides` (`title`, `say`, `blocks`), plus a `minor` list
 of trivial hunks per chapter. Slides and answers share one block vocabulary: `hunk`, `code`
 (path + ref + line range, filled in by the server, never pasted), `diagram` (Mermaid), `compare`,
-and `comment` (answers only: a draft the reviewer can add to their review). Import fails unless every hunk is shown.
+and `comment` (answers only: a draft the reviewer can add to their review). Import fails unless every hunk is shown,
+and, when the MR title or branch names a ticket (e.g. `ABC-123`), unless `intro.ticket` holds the loaded ticket's
+key, URL and title or `intro.ticketUnavailable` says why it couldn't be loaded.
 
 ### Packages
 
