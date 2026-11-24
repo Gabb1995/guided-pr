@@ -49,6 +49,30 @@
     return wrap;
   }
 
+  // A classDef/style that sets fill: but not color: keeps the theme's text colour,
+  // e.g. light text on a pale fill in dark mode. Pick dark or light text by the fill's luminance.
+  function fixNodeContrast(box) {
+    const lum = (c) => {
+      const m = c && c.match(/rgba?\(([^)]+)\)/);
+      if (!m) return null;
+      const [r, g, b, a = 1] = m[1].split(',').map(Number);
+      if (a === 0) return null;
+      const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    box.querySelectorAll('g.node').forEach((node) => {
+      const shape = node.querySelector('rect, polygon, circle, ellipse, path');
+      if (!shape || !/fill\s*:/.test(shape.getAttribute('style') || '')) return;
+      const L = lum(getComputedStyle(shape).fill);
+      if (L == null) return;
+      const text = L > 0.4 ? '#1a1a1a' : '#f2f2f2';
+      node.querySelectorAll('text, tspan, span, div, p').forEach((t) => {
+        t.style.setProperty('color', text, 'important');
+        t.style.setProperty('fill', text, 'important');
+      });
+    });
+  }
+
   let mermaidReady = false, mid = 0;
   function diagram(b) {
     const wrap = el('figure', 'blk blk-diagram');
@@ -62,7 +86,7 @@
       mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'neutral', securityLevel: 'strict', fontFamily: 'Inter, system-ui, sans-serif' });
       mermaidReady = true;
     }
-    mermaid.render('mmd' + (++mid), b.mermaid).then(({ svg }) => { box.innerHTML = svg; }).catch(() => {});
+    mermaid.render('mmd' + (++mid), b.mermaid).then(({ svg }) => { box.innerHTML = svg; fixNodeContrast(box); }).catch(() => {});
     return wrap;
   }
 
