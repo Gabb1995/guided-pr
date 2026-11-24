@@ -16,6 +16,17 @@
       `<span class="blk-path" title="${esc(path)}">‎${esc(path)}</span>` + (extra || ''));
   }
 
+  // Notes keyed "side:line"; hunks default to the new side, code blocks only have it.
+  function notesBy(b) {
+    const m = new Map();
+    for (const n of b.notes || []) {
+      const k = (n.side || 'new') + ':' + n.line;
+      m.set(k, [...(m.get(k) || []), n.text]);
+    }
+    return m;
+  }
+  const noteRows = texts => (texts || []).map(t => el('div', 'dl-note', `<span class="note-mark">▲</span><span>${inline(t)}</span>`));
+
   function hunk(b, ctx) {
     const h = ctx.hunks[b.hunkId];
     const wrap = el('figure', 'blk blk-code');
@@ -23,13 +34,13 @@
     wrap.append(head(b.label, h.path, `<span class="blk-stat"><b class="plus">+${h.additions}</b> <b class="minus">−${h.deletions}</b></span>`));
     const focus = new Set(b.focusKeys || []);
     if (b.side && b.startLine) for (let n = b.startLine; n <= (b.endLine || b.startLine); n++) focus.add(b.side + ':' + n);
-    const table = el('div', 'diff');
+    const table = el('div', 'diff'), notes = notesBy(b);
     for (const r of h.rows) {
       const side = r.t === 'del' ? 'old' : 'new', n = side === 'old' ? r.o : r.n;
       const row = el('div', `dl ${r.t}${focus.has(side + ':' + n) ? ' focus' : ''}`,
         `<span class="ln">${r.o || ''}</span><span class="ln">${r.n || ''}</span><span class="sg">${r.t === 'add' ? '+' : r.t === 'del' ? '−' : ''}</span><code>${r.html || ' '}</code>`);
       Object.assign(row.dataset, { src: b.hunkId, hunk: b.hunkId, path: h.path, side, line: n });
-      table.append(row);
+      table.append(row, ...noteRows(notes.get(side + ':' + n)));
     }
     wrap.append(table);
     return wrap;
@@ -38,12 +49,12 @@
   function code(b) {
     const wrap = el('figure', 'blk blk-code');
     wrap.append(head(b.label, b.path, `<span class="blk-tag">${b.ref === 'base' ? 'before this change' : 'repo'} · outside the diff</span>`));
-    const table = el('div', 'diff');
+    const table = el('div', 'diff'), notes = notesBy(b);
     const focus = new Set(b.focusKeys || []);
     for (const r of b.rows || []) {
       const row = el('div', `dl ctx${focus.has('new:' + r.n) ? ' focus' : ''}`, `<span class="ln"></span><span class="ln">${r.n}</span><span class="sg"></span><code>${r.html || esc(r.text) || ' '}</code>`);
       Object.assign(row.dataset, { src: `code:${b.ref}:${b.path}`, path: b.path, ref: b.ref, side: 'new', line: r.n });
-      table.append(row);
+      table.append(row, ...noteRows(notes.get('new:' + r.n)));
     }
     wrap.append(table);
     return wrap;
@@ -87,6 +98,18 @@
       mermaidReady = true;
     }
     mermaid.render('mmd' + (++mid), b.mermaid).then(({ svg }) => { box.innerHTML = svg; fixNodeContrast(box); }).catch(() => {});
+    return wrap;
+  }
+
+  function table(b) {
+    const wrap = el('figure', 'blk blk-table');
+    const scroll = el('div', 'table-scroll');
+    const t = el('table');
+    t.innerHTML = `<thead><tr>${(b.columns || []).map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead>` +
+      `<tbody>${(b.cells || []).map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    scroll.append(t);
+    wrap.append(scroll);
+    if (b.caption) wrap.append(el('figcaption', null, inline(b.caption)));
     return wrap;
   }
 
@@ -136,11 +159,12 @@
       case 'hunk': return hunk(b, ctx);
       case 'code': return code(b, ctx);
       case 'diagram': return diagram(b, ctx);
+      case 'table': return table(b, ctx);
       case 'compare': return compare(b, ctx);
       case 'comment': return comment(b, ctx);
       default: return el('div', 'blk-missing', 'Unknown block ' + esc(b && b.type));
     }
   }
 
-  window.Blocks = { render, md, inline, esc, el, short, VISUAL: new Set(['hunk', 'code', 'diagram', 'compare']) };
+  window.Blocks = { render, md, inline, esc, el, short, VISUAL: new Set(['hunk', 'code', 'diagram', 'table', 'compare']) };
 })();

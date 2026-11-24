@@ -65,9 +65,10 @@ type Answer struct {
 
 // Block is one view. Which fields apply depends on Type:
 //
-//	hunk     hunkId, [side, startLine, endLine] to highlight lines, [label]
-//	code     path, ref (head|base), startLine, endLine, [label]; the server fills rows from the forge
+//	hunk     hunkId, [side, startLine, endLine] to highlight lines, [label], [notes]
+//	code     path, ref (head|base), startLine, endLine, [label], [notes]; the server fills rows from the forge
 //	diagram  mermaid, [caption]
+//	table    columns, cells (one []string per row, same length as columns), [caption]
 //	compare  left, right (each a hunk or code block), [caption]
 //	comment  hunkId, side (old|new), startLine, endLine, body; answers only, the reviewer posts it
 type Block struct {
@@ -85,7 +86,19 @@ type Block struct {
 	Right     *Block `json:"right,omitempty"`
 	Body      string `json:"body,omitempty"`
 
+	Notes   []Note     `json:"notes,omitempty"`
+	Columns []string   `json:"columns,omitempty"`
+	Cells   [][]string `json:"cells,omitempty"`
+
 	Rows []Row `json:"rows,omitempty"` // server-filled for code blocks; rejected on input
+}
+
+// Note is a short remark shown under one line of a hunk or code block.
+// Side (old|new) applies to hunks only and defaults to new.
+type Note struct {
+	Line int    `json:"line"`
+	Side string `json:"side,omitempty"`
+	Text string `json:"text"`
 }
 
 // Row is one rendered line of a code block. HTML is the syntax-highlighted text, added by the web layer.
@@ -114,6 +127,14 @@ func TicketKeys(pr forge.PullRequest) []string {
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
 const maxCodeLines = 200
+
+const (
+	maxNotes        = 12
+	maxNoteLen      = 400
+	maxTableCols    = 8
+	maxTableRows    = 40
+	maxTableCellLen = 300
+)
 
 // Validate checks a deck against its snapshot: structure, references, and that every hunk is shown.
 func Validate(d Deck, snap session.Snapshot) error {
@@ -238,6 +259,20 @@ func validateBlock(b Block, snap session.Snapshot, top bool) error {
 	if b.Rows != nil {
 		return fmt.Errorf("rows are filled in by the server; give path, ref and line numbers instead")
 	}
+	if len(b.Notes) > 0 && b.Type != "hunk" && b.Type != "code" {
+		return fmt.Errorf("notes only apply to hunk and code blocks")
+	}
+	if len(b.Notes) > maxNotes {
+		return fmt.Errorf("at most %d notes per block", maxNotes)
+	}
+	for _, n := range b.Notes {
+		if strings.TrimSpace(n.Text) == "" || len(n.Text) > maxNoteLen {
+			return fmt.Errorf("note text must be 1-%d characters", maxNoteLen)
+		}
+	}
+	if (b.Columns != nil || b.Cells != nil) && b.Type != "table" {
+		return fmt.Errorf("columns and cells only apply to table blocks")
+	}
 	switch b.Type {
 	case "hunk":
 		hunk, _, ok := snap.Hunk(b.HunkID)
@@ -247,6 +282,15 @@ func validateBlock(b Block, snap session.Snapshot, top bool) error {
 		if b.Side != "" || b.StartLine != 0 || b.EndLine != 0 {
 			if _, _, err := linesIn(hunk, b.Side, b.StartLine, b.EndLine); err != nil {
 				return err
+			}
+		}
+		for _, n := range b.Notes {
+			side := n.Side
+			if side == "" {
+				side = "new"
+			}
+			if _, _, err := linesIn(hunk, side, n.Line, n.Line); err != nil {
+				return fmt.Errorf("note: %w", err)
 			}
 		}
 	case "code":
@@ -259,9 +303,39 @@ func validateBlock(b Block, snap session.Snapshot, top bool) error {
 		if b.StartLine < 1 || b.EndLine < b.StartLine || b.EndLine-b.StartLine >= maxCodeLines {
 			return fmt.Errorf("code needs 1 <= startLine <= endLine and at most %d lines", maxCodeLines)
 		}
+		for _, n := range b.Notes {
+			if n.Side != "" {
+				return fmt.Errorf("note side applies to hunks only")
+			}
+			if n.Line < b.StartLine || n.Line > b.EndLine {
+				return fmt.Errorf("note line %d is outside %d-%d", n.Line, b.StartLine, b.EndLine)
+			}
+		}
 	case "diagram":
 		if strings.TrimSpace(b.Mermaid) == "" || len(b.Mermaid) > 8000 {
 			return fmt.Errorf("diagram needs mermaid source under 8000 characters")
+		}
+	case "table":
+		if len(b.Columns) == 0 || len(b.Columns) > maxTableCols {
+			return fmt.Errorf("table needs 1-%d columns", maxTableCols)
+		}
+		if len(b.Cells) == 0 || len(b.Cells) > maxTableRows {
+			return fmt.Errorf("table needs 1-%d rows of cells", maxTableRows)
+		}
+		for _, c := range b.Columns {
+			if strings.TrimSpace(c) == "" || len(c) > maxTableCellLen {
+				return fmt.Errorf("table column names must be 1-%d characters", maxTableCellLen)
+			}
+		}
+		for i, row := range b.Cells {
+			if len(row) != len(b.Columns) {
+				return fmt.Errorf("table row %d has %d cells, want %d", i+1, len(row), len(b.Columns))
+			}
+			for _, c := range row {
+				if len(c) > maxTableCellLen {
+					return fmt.Errorf("table cells must be at most %d characters", maxTableCellLen)
+				}
+			}
 		}
 	case "compare":
 		if !top {
