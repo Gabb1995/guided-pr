@@ -80,8 +80,19 @@ the left). Put tests next to the code they prove. Use `**bold**` and `` `code` `
 - `{"type":"code","path":"…","ref":"head"|"base","startLine":N,"endLine":M,"label":"…"}` for code outside
   the diff (max 200 lines). **Never paste code**: the server fetches it at the pinned SHA. Check line
   numbers in the checkout first (`git show HEADSHA:path | sed -n 'N,Mp'`).
-- `{"type":"diagram","mermaid":"…","caption":"…"}`: only when a flow is genuinely easier as a picture. If you colour nodes, set `color:` alongside `fill:` in every `classDef`/`style` (e.g. `classDef new fill:#d4f8dc,stroke:#2da44e,color:#0b3d1a`); the viewer may be in dark mode.
+- `{"type":"diagram","mermaid":"…","caption":"…"}`: only when a picture is genuinely clearer. Pick the
+  Mermaid type that fits: `sequenceDiagram` for calls between classes/services/APIs (often better than a
+  flowchart for backend changes), `stateDiagram-v2` for status transitions, `erDiagram` for schema or
+  migration changes, `flowchart LR` for pipelines and branching logic. If you colour nodes, set `color:`
+  alongside `fill:` in every `classDef`/`style` (e.g. `classDef new fill:#d4f8dc,stroke:#2da44e,color:#0b3d1a`);
+  the viewer may be in dark mode.
+- `{"type":"table","columns":["…"],"cells":[["…"]],"caption":"…"}`: before/after behaviour (input → old →
+  new), flag or config matrices, edge cases. Every row has one cell per column (max 8 columns, 40 rows);
+  cells take `` `code` `` and `**bold**`. Prefer a table over prose listing several cases.
 - `{"type":"compare","left":{…},"right":{…},"caption":"…"}`: two hunk/code blocks side by side.
+- `notes` on a `hunk` or `code` block: `[{"line":N,"text":"…"}]` (add `"side":"old"` for a removed line in
+  a hunk) shows a remark under that line. Use it to point at the one or two lines that matter instead of
+  "on line 42…" in `say`; keep each note to one sentence, at most a few per block.
 
 Every hunk must appear in a slide's `hunk` block (directly or in a `compare`) or in a `minor` list.
 
