@@ -81,7 +81,7 @@ the left). Put tests next to the code they prove. Use `**bold**` and `` `code` `
 - `{"type":"code","path":"…","ref":"head"|"base","startLine":N,"endLine":M,"label":"…"}` for code outside
   the diff (max 200 lines). **Never paste code**: the server fetches it at the pinned SHA. Check line
   numbers in the checkout first (`git show HEADSHA:path | sed -n 'N,Mp'`).
-- `{"type":"diagram","mermaid":"…","caption":"…"}`: only when a flow is genuinely easier as a picture.
+- `{"type":"diagram","mermaid":"…","caption":"…"}`: only when a flow is genuinely easier as a picture. If you colour nodes, set `color:` alongside `fill:` in every `classDef`/`style` (e.g. `classDef new fill:#d4f8dc,stroke:#2da44e,color:#0b3d1a`); the viewer may be in dark mode.
 - `{"type":"compare","left":{…},"right":{…},"caption":"…"}`: two hunk/code blocks side by side.
 
 Every hunk must appear in a slide's `hunk` block (directly or in a `compare`) or in a `minor` list.
